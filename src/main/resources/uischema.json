@@ -128,17 +128,17 @@
             "type": "attribute",
             "value": {
               "name": "connection.salesforce.salesforceObject",
-              "displayName": "Channel",
+              "displayName": "Salesforce Object",
               "inputType": "string",
               "required": "true",
-              "helpTip": "The Push Topic or Platform Event channel to subscribe to (e.g. /topic/Account or /data/AccountChangeEvent)."
+              "helpTip": "Name of the Salesforce object to interact with."
             }
           },
           {
             "type": "attribute",
             "value": {
               "name": "connection.salesforce.packageVersion",
-              "displayName": "Streaming API Version",
+              "displayName": "Salesforce API Version",
               "inputType": "string",
               "required": "true",
               "helpTip": "Salesforce Streaming API version (e.g. 37.0)."

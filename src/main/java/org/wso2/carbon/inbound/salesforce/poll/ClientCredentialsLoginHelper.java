@@ -62,9 +62,17 @@ public class ClientCredentialsLoginHelper {
                         ": " + response.getContentAsString());
             }
 
+            Object parsedResponse;
+            try {
+                parsedResponse = JSON.parse(response.getContentAsString());
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to parse OAuth2 token response: " + response.getContentAsString(), e);
+            }
+            if (!(parsedResponse instanceof java.util.Map)) {
+                throw new RuntimeException("Unexpected OAuth2 token response format: " + parsedResponse);
+            }
             @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> tokenResponse = (java.util.Map<String, Object>) JSON.parse(
-                    response.getContentAsString());
+            java.util.Map<String, Object> tokenResponse = (java.util.Map<String, Object>) parsedResponse;
 
             String accessToken = (String) tokenResponse.get(ACCESS_TOKEN);
             String instanceUrl = (String) tokenResponse.get(INSTANCE_URL);
