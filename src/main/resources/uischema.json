@@ -128,7 +128,7 @@
             "type": "attribute",
             "value": {
               "name": "connection.salesforce.salesforceObject",
-              "displayName": "Salesforce Object",
+              "displayName": "Channel",
               "inputType": "string",
               "required": "true",
               "helpTip": "The Push Topic or Platform Event channel to subscribe to (e.g. /topic/Account or /data/AccountChangeEvent)."
@@ -138,7 +138,7 @@
             "type": "attribute",
             "value": {
               "name": "connection.salesforce.packageVersion",
-              "displayName": "Package Version",
+              "displayName": "Streaming API Version",
               "inputType": "string",
               "required": "true",
               "helpTip": "Salesforce Streaming API version (e.g. 37.0)."
@@ -153,7 +153,7 @@
               "comboValues": ["username-token", "oauth"],
               "defaultValue": "username-token",
               "required": "true",
-              "helpTip": "Select 'username-token' for SOAP login. Select 'oauth' to use oauth2 Client Credentials (no user context required)."
+              "helpTip": "Select 'username-token' for SOAP login. Select 'oauth' to use OAuth2 Client Credentials (no user context required)."
             }
           },
           {
@@ -197,7 +197,7 @@
               "displayName": "Client ID",
               "inputType": "string",
               "required": "true",
-              "helpTip": "oauth2 consumer key from the Salesforce Connected App.",
+              "helpTip": "OAuth2 consumer key from the Salesforce Connected App.",
               "enableCondition": [{"connection.salesforce.authenticationType": "oauth"}]
             }
           },
@@ -208,7 +208,7 @@
               "displayName": "Client Secret",
               "inputType": "string",
               "required": "true",
-              "helpTip": "oauth2 consumer secret from the Salesforce Connected App.",
+              "helpTip": "OAuth2 consumer secret from the Salesforce Connected App.",
               "enableCondition": [{"connection.salesforce.authenticationType": "oauth"}]
             }
           },
@@ -220,7 +220,7 @@
               "inputType": "string",
               "defaultValue": "https://login.salesforce.com/services/oauth2/token",
               "required": "true",
-              "helpTip": "oauth2 token endpoint. Use https://test.salesforce.com/services/oauth2/token for sandboxes.",
+              "helpTip": "OAuth2 token endpoint. Use https://test.salesforce.com/services/oauth2/token for sandboxes.",
               "enableCondition": [{"connection.salesforce.authenticationType": "oauth"}]
             }
           }

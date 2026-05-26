@@ -215,12 +215,12 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
             BayeuxParameters initialParams = new BayeuxParameters() {
                 @Override
                 public String bearerToken() {
-                    return null;
+                    throw new IllegalStateException("Bearer token is not available before OAuth2 token exchange");
                 }
 
                 @Override
                 public URL endpoint() {
-                    return null;
+                    throw new IllegalStateException("Endpoint is not available before OAuth2 token exchange");
                 }
             };
             tokenProvider = new BearerTokenProvider(() -> {
@@ -326,7 +326,11 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
         // Load authentication type
         String authTypeParam = properties.getProperty(SalesforceConstant.AUTH_TYPE);
         if (authTypeParam != null && !StringUtils.isEmpty(authTypeParam)) {
-            authType = authTypeParam;
+            authType = authTypeParam.trim().toLowerCase();
+            if (!SalesforceConstant.AUTH_TYPE_SOAP.equals(authType) && !SalesforceConstant.AUTH_TYPE_OAUTH.equals(authType)) {
+                handleException("Invalid authenticationType '" + authType + "'. Supported values: "
+                        + SalesforceConstant.AUTH_TYPE_SOAP + ", " + SalesforceConstant.AUTH_TYPE_OAUTH);
+            }
         }
         if (SalesforceConstant.AUTH_TYPE_OAUTH.equals(authType)) {
             clientId = properties.getProperty(SalesforceConstant.CLIENT_ID);
