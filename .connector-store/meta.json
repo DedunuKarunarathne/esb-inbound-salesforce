@@ -17,7 +17,7 @@
     ],
     "releases": [
         {
-            "tagName": "v3.0.4",
+            "tagName": "v3.0.5",
             "products": [
                 "MI 4.4.0",
                 "MI 4.5.0",
@@ -103,28 +103,56 @@
                             "type": "string",
                             "required": true,
                             "defaultValue": "",
-                            "description": "Version of the Salesforce package."
+                            "description": "Salesforce Streaming API version (e.g. 37.0)."
+                        },
+                        {
+                            "name": "connection.salesforce.authenticationType",
+                            "type": "combo",
+                            "required": true,
+                            "defaultValue": "username-token",
+                            "description": "Select 'username-token' for SOAP login. Select 'oauth' to use OAuth2 Client Credentials (no user context required)."
                         },
                         {
                             "name": "connection.salesforce.userName",
                             "type": "string",
                             "required": true,
                             "defaultValue": "",
-                            "description": "Salesforce login user name."
+                            "description": "Salesforce login username."
                         },
                         {
                             "name": "connection.salesforce.password",
                             "type": "string",
                             "required": true,
                             "defaultValue": "",
-                            "description": "Salesforce login password."
+                            "description": "Salesforce login password concatenated with the security token (e.g. myPasswordXXXXXXXX)."
                         },
                         {
                             "name": "connection.salesforce.loginEndpoint",
                             "type": "string",
                             "required": true,
                             "defaultValue": "https://login.salesforce.com",
-                            "description": "Salesforce login URL endpoint."
+                            "description": "Salesforce SOAP login endpoint. Use https://test.salesforce.com for sandboxes."
+                        },
+                        {
+                            "name": "connection.salesforce.clientId",
+                            "type": "string",
+                            "required": true,
+                            "defaultValue": "",
+                            "description": "OAuth2 consumer key from the Salesforce Connected App."
+                        },
+                        {
+                            "name": "connection.salesforce.clientSecret",
+                            "type": "string",
+                            "required": true,
+                            "defaultValue": "",
+                            "description": "OAuth2 consumer secret from the Salesforce Connected App."
+                        },
+                        {
+                            "name": "connection.salesforce.tokenEndpoint",
+                            "type": "string",
+                            "required": true,
+                            "defaultValue": "https://login.salesforce.com/services/oauth2/token",
+                            "description": "OAuth2 token endpoint. Use https://test.salesforce.com/services/oauth2/token for sandboxes."
                         },
                         {
                             "name": "connection.salesforce.soapApiVersion",
@@ -167,6 +195,13 @@
                             "required": false,
                             "defaultValue": "",
                             "description": "Specify the file path of a text file to start replaying from the event ID stored in it."
+                        },
+                        {
+                            "name": "connection.salesforce.fallbackReplayId",
+                            "type": "string",
+                            "required": false,
+                            "defaultValue": "",
+                            "description": "Fallback event ID to start reading messages if the event ID stored in the Registry is invalid. -2 to replay all events, or -1 to replay only new events."
                         },
                         {
                             "name": "connection.salesforce.replayWithMultipleInbounds",
