@@ -241,7 +241,8 @@
               "inputType": "string",
               "defaultValue": "22.0",
               "required": "false",
-              "helpTip": "Version of the Salesforce SOAP API to use."
+              "helpTip": "Version of the Salesforce SOAP API to use.",
+              "enableCondition": [{"connection.salesforce.authenticationType": "username-token"}]
             }
           },
           {
