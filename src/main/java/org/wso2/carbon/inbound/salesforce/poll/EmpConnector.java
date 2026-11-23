@@ -84,9 +84,17 @@ public class EmpConnector {
             return String.format("Subscription [%s:%s]", getTopic(), getReplayFrom());
         }
 
-        Future<TopicSubscription> subscribe() {
+        /**
+         * Subscribe this topic on the given Bayeux client.
+         *
+         * The target client is passed explicitly instead of reading the {@code client} field, so that a handshake
+         * callback of one client can never register a listener on a different client.
+         *
+         * @param target the Bayeux client to subscribe on
+         */
+        Future<TopicSubscription> subscribe(BayeuxClient target) {
             Long replayFrom = getReplayFrom();
-            ClientSessionChannel channel = client.getChannel(topic);
+            ClientSessionChannel channel = target.getChannel(topic);
             CompletableFuture<TopicSubscription> future = new CompletableFuture<>();
             channel.subscribe((c, message) -> consumer.accept(message.getDataAsMap()), (c, message) -> {
                 if (message.isSuccessful()) {
@@ -166,11 +174,21 @@ public class EmpConnector {
      * @param terminateCompletely indicates if this is a final shutdown (true) or a temporary stop (false).
      */
     public void stop(boolean terminateCompletely ) {
-        if (!running.compareAndSet(true, false)) {
+        boolean wasRunning = running.getAndSet(false);
+        BayeuxClient current = client;
+        client = null;
+
+        if (current == null && !wasRunning && !terminateCompletely) {
+            // Already stopped and nothing to clean up.
             return;
         }
 
-        if (client != null) {
+        if (current != null) {
+            if (!wasRunning) {
+                // The running flag must never hide a live client; otherwise it is left connected as an orphan.
+                LOG.warn("EmpConnector was not marked as running, but a Bayeux Client is still active. "
+                        + "Shutting it down.");
+            }
             LOG.info("Forcefully shutting down Bayeux Client in EmpConnector");
 
             // Unsubscribe from all active subscriptions
@@ -178,14 +196,12 @@ public class EmpConnector {
                 subscriptions.forEach(SubscriptionImpl::cancel);
             }
             // Force disconnect
-            client.abort();  // Immediately terminates transport connections
-            boolean disconnected = client.waitFor(5000, BayeuxClient.State.DISCONNECTED);
+            current.abort();  // Immediately terminates transport connections
+            boolean disconnected = current.waitFor(5000, BayeuxClient.State.DISCONNECTED);
 
             if (!disconnected) {
                 LOG.warn("Bayeux Client did not disconnect within 5 seconds! Forcing shutdown...");
             }
-
-            client = null;
         }
 
         try {
@@ -237,7 +253,7 @@ public class EmpConnector {
                     String.format("Already subscribed to %s [%s]", topic, parameters.endpoint()));
         }
         SubscriptionImpl subscription = new SubscriptionImpl(topic, consumer);
-        return subscription.subscribe();
+        return subscription.subscribe(client);
     }
 
     /**
@@ -304,20 +320,40 @@ public class EmpConnector {
                 request.header(AUTHORIZATION, bearerToken);
             }
         };
-        client = new BayeuxClient(parameters.endpoint().toExternalForm(), httpTransport);
-        client.addExtension(new ReplayExtension(replay));
-        addListeners(client);
-        client.handshake((c, m) -> {
+        final BayeuxClient newClient = new BayeuxClient(parameters.endpoint().toExternalForm(), httpTransport);
+        newClient.addExtension(new ReplayExtension(replay));
+        addListeners(newClient);
+        client = newClient;
+        // Note: CometD invokes this callback for every handshake reply of this client, including its own automatic
+        // handshake retries and re-handshakes, not only for the first handshake.
+        newClient.handshake((c, m) -> {
+            if (newClient != client) {
+                // This client has been replaced (or the connector was stopped). It must not subscribe anything,
+                // otherwise a duplicate listener is registered and events are processed more than once.
+                if (newClient.isDisconnected()) {
+                    // Expected: stop() aborted this client while its handshake was in flight (TERMINATING/
+                    // DISCONNECTED), e.g. during a reconnect or redeploy.
+                    LOG.info("Discarding handshake reply of a Bayeux Client that was already shut down.");
+                } else {
+                    // Unexpected: an old client is still alive and handshaking while it is no longer the active one.
+                    LOG.warn("Received a handshake reply from a stale Bayeux Client that is still active. "
+                            + "Aborting the stale client.");
+                }
+                newClient.abort();
+                future.complete(false);
+                return;
+            }
             if (!m.isSuccessful()) {
                 Object error = m.get(ERROR);
                 if (error == null) {
                     error = m.get(FAILURE);
                 }
+                // Do not mark the connector as stopped here: CometD keeps retrying the handshake on this client, so
+                // the client is still active and must remain reachable by stop()/reconnect().
                 future.completeExceptionally(
                         new ConnectException(String.format("Cannot connect [%s] : %s", parameters.endpoint(), error)));
-                running.set(false);
             } else {
-                subscriptions.forEach(SubscriptionImpl::subscribe);
+                subscriptions.forEach(subscription -> subscription.subscribe(newClient));
                 future.complete(true);
             }
         });
@@ -363,6 +399,11 @@ public class EmpConnector {
         @Override
         public void onMessage(ClientSessionChannel channel, Message message) {
 
+            if (channel.getSession() != client) {
+                // Ignore failures reported by a client that has already been replaced or stopped; reconnecting on
+                // its behalf would tear down the healthy current client.
+                return;
+            }
             if (!message.isSuccessful()) {
                 if (isError(message, ERROR_401) || isError(message, ERROR_403)) {
                     reauthenticate.set(true);

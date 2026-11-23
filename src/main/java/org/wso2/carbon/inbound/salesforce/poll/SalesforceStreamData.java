@@ -243,16 +243,18 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
             });
         }
         BayeuxParameters params = tokenProvider.login();
+        if (connector != null) {
+            // Shut down the previous connector (and its Bayeux client) before replacing it, so that it cannot keep
+            // receiving and injecting events alongside the new one.
+            LOG.info("Reinitializing the connector");
+            connector.stop(true);
+        }
         connector = new EmpConnector(params, this);
         LoggingListener loggingListener = new LoggingListener(true, true);
         connector.addListener(Channel.META_HANDSHAKE, loggingListener).addListener(Channel.META_CONNECT, loggingListener)
                 .addListener(Channel.META_DISCONNECT, loggingListener).addListener(Channel.META_SUBSCRIBE, loggingListener)
                 .addListener(Channel.META_UNSUBSCRIBE, loggingListener);
         connector.setBearerTokenProvider(tokenProvider);
-        if (connector.isConnected()) {
-            LOG.info("Reinitializing the connector");
-            connector.stop();
-        }
         connector.start().get(waitTime, TimeUnit.MILLISECONDS);
         TopicSubscription subscription;
 
