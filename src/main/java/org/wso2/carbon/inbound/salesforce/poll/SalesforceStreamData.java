@@ -57,16 +57,19 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
     // optional parameters.
     private int connectionTimeout;
     private int waitTime;
-    private boolean isPolled = false;
+    private volatile boolean isPolled = false;
     private SalesforceDataHolderObject SalesforceDataHolderObject=new SalesforceDataHolderObject();
-    private EmpConnector connector;
+    private volatile EmpConnector connector;
+    // Set by destroy(), which MI also calls when the polling task is paused (for example when this node loses
+    // coordination), and cleared by resume(). A connection that is being set up meanwhile must not stay running.
+    private volatile boolean stopRequested;
     private AbstractRegistry registry;
     private boolean isReplayEnabled = false;
     private boolean isReplayWithMultipleInboundsEnabled = false;
     private boolean isInitialEventIdUsed = false;
 
     // Flag indicating whether the connection has failed
-    private boolean connectionFailed;
+    private volatile boolean connectionFailed;
     private long fallbackReplayId = Long.MIN_VALUE;
 
     // Authentication type and oauth2 parameters
@@ -201,9 +204,10 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
     
     /**
      * Connecting to Salesforce and listening to events
+     * @return false if the connection was abandoned because destroy() was called meanwhile, true otherwise
      * @throws Throwable
      */
-    private void makeConnect() throws Throwable {
+    private boolean makeConnect() throws Throwable {
         Consumer<Map<String, Object>> consumer = event -> injectSalesforceMessage(JSON.toString(event),
                 (Long) ((HashMap) event.
                         get(SalesforceConstant.EVENT)).get(SalesforceConstant.REPLAY_ID));
@@ -255,7 +259,18 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
                 .addListener(Channel.META_DISCONNECT, loggingListener).addListener(Channel.META_SUBSCRIBE, loggingListener)
                 .addListener(Channel.META_UNSUBSCRIBE, loggingListener);
         connector.setBearerTokenProvider(tokenProvider);
+        if (stopRequested) {
+            // destroy() ran while this connection was being set up and may not have seen the new connector. The
+            // connector field is written before this flag is read, and destroy() writes the flag before reading the
+            // field, so at least one of them stops it.
+            connector.stop(true);
+            return false;
+        }
         connector.start().get(waitTime, TimeUnit.MILLISECONDS);
+        if (stopRequested) {
+            // destroy() stopped the new connector while it was starting.
+            return false;
+        }
         TopicSubscription subscription;
 
         //Read replayId
@@ -293,6 +308,7 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
         } catch (InterruptedException e) {
             LOG.error("Unexpected error occurred while subscribing to event/topic", e);
         }
+        return true;
     }
 
     /**
@@ -445,9 +461,10 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
         //Establishing connection with Salesforce streaming api.
         try {
             if (!isPolled || connectionFailed) {
-                makeConnect();
-                isPolled = true;
-                connectionFailed = false;
+                if (makeConnect()) {
+                    isPolled = true;
+                    connectionFailed = false;
+                }
             }
         } catch (Throwable e) {
             LOG.error("Error while setup the Salesforce connection.", e);
@@ -490,13 +507,18 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
      */
     @Override
     public void destroy() {
-        if (connector != null) {
-            connector.stop(true);
+        // MI also calls this when the polling task is paused (for example when this node loses coordination), and
+        // resume() afterwards. Set the flag before reading the connector; see makeConnect().
+        stopRequested = true;
+        EmpConnector current = connector;
+        if (current != null) {
+            current.stop(true);
         }
     }
 
     @Override
     public void resume() {
+        stopRequested = false;
         isPolled = false;
         isInitialEventIdUsed = false;
     }
