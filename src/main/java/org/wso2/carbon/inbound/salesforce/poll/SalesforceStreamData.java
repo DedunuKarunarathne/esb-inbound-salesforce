@@ -208,6 +208,10 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
      * @throws Throwable
      */
     private boolean makeConnect() throws Throwable {
+        if (stopRequested) {
+            // Paused or undeployed and not resumed yet: do not log in to Salesforce. resume() clears the flag.
+            return false;
+        }
         Consumer<Map<String, Object>> consumer = event -> injectSalesforceMessage(JSON.toString(event),
                 (Long) ((HashMap) event.
                         get(SalesforceConstant.EVENT)).get(SalesforceConstant.REPLAY_ID));
@@ -294,21 +298,34 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
                             .get(waitTime, TimeUnit.MILLISECONDS);
                     LOG.info("Subscribed with fallback replay: " + subscription);
                 } catch (ExecutionException retryEx) {
-                    LOG.error("Unable to subscribe after replay fallback", retryEx);
+                    logConnectionSetupError("Unable to subscribe after replay fallback", retryEx);
                 } catch (TimeoutException retryEx) {
-                    LOG.error("Timed out subscribing after replay fallback", retryEx);
+                    logConnectionSetupError("Timed out subscribing after replay fallback", retryEx);
                 } catch (InterruptedException retryEx) {
-                    LOG.error("Interrupted while subscribing after replay fallback", retryEx);
+                    logConnectionSetupError("Interrupted while subscribing after replay fallback", retryEx);
                 }
             } else {
-                LOG.error("Unable to subscribed for the event/topic", e);
+                logConnectionSetupError("Unable to subscribed for the event/topic", e);
             }
         } catch (TimeoutException e) {
-            LOG.error("Timed out subscribing", e);
+            logConnectionSetupError("Timed out subscribing", e);
         } catch (InterruptedException e) {
-            LOG.error("Unexpected error occurred while subscribing to event/topic", e);
+            logConnectionSetupError("Unexpected error occurred while subscribing to event/topic", e);
         }
-        return true;
+        // Not connected if destroy() stopped the connector while it was subscribing.
+        return !stopRequested;
+    }
+
+    /**
+     * Log a failure while setting up the Salesforce connection. A failure caused by destroy() stopping the connection
+     * meanwhile (for example when the polling task is paused) is expected, so it is not logged as an error.
+     */
+    private void logConnectionSetupError(String message, Throwable e) {
+        if (stopRequested) {
+            LOG.info("Salesforce connection setup abandoned because the inbound endpoint was stopped: " + message);
+        } else {
+            LOG.error(message, e);
+        }
     }
 
     /**
@@ -467,7 +484,7 @@ public class SalesforceStreamData extends GenericPollingConsumer implements Conn
                 }
             }
         } catch (Throwable e) {
-            LOG.error("Error while setup the Salesforce connection.", e);
+            logConnectionSetupError("Error while setup the Salesforce connection.", e);
         }
         return null;
     }
