@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
@@ -137,7 +138,41 @@ public class EmpConnectorTest {
         waitUntil("no client to stay connected", () -> server.pollingClients(POLL_WINDOW_MILLIS) == 0);
     }
 
+    @Test(description = "A connect() that overlaps the current client replaces and aborts it, a final stop then leaves "
+            + "no client running, and a connect() after the final stop starts nothing")
+    public void testOverlappingConnectAndFinalStopLeaveNoClient() throws Exception {
+        startAndSubscribe();
+        BayeuxClient first = (BayeuxClient) field(connector, "client");
+
+        // A second connect() while the first client is still current: the replaced client must be aborted.
+        int handshakes = server.handshakeAttempts();
+        connect();
+        waitUntil("the second client to handshake", () -> server.handshakeAttempts() > handshakes);
+        waitUntil("the replaced client to be aborted", first::isDisconnected);
+        Thread.sleep(POLL_WINDOW_MILLIS);
+        Assert.assertEquals(server.pollingClients(POLL_WINDOW_MILLIS), 1, "only the new client may stay connected");
+        assertEachEventDeliveredOnce();
+
+        // The final stop aborts the started client.
+        connector.stop(true);
+        waitUntil("no client to stay connected", () -> server.pollingClients(POLL_WINDOW_MILLIS) == 0);
+
+        // A connect() after the final stop must not start a client.
+        int handshakesAfterStop = server.handshakeAttempts();
+        Assert.assertFalse(connect().get(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS), "connect() after a final stop");
+        Assert.assertNull(field(connector, "client"), "no client may be published after a final stop");
+        Thread.sleep(POLL_WINDOW_MILLIS);
+        Assert.assertEquals(server.handshakeAttempts(), handshakesAfterStop, "no handshake after a final stop");
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    @SuppressWarnings("unchecked")
+    private Future<Boolean> connect() throws Exception {
+        Method connect = EmpConnector.class.getDeclaredMethod("connect");
+        connect.setAccessible(true);
+        return (Future<Boolean>) connect.invoke(connector);
+    }
 
     static EmpConnector newConnector(MockStreamingServer server) {
         BayeuxParameters parameters = new BayeuxParameters() {
